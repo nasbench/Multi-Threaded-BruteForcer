@@ -127,7 +127,7 @@ if __name__ == "__main__":
                             help='The \'password\' as it is shown in the HTML name field')
 
     parser.add_argument( '-t', '--threads', dest='numThreads', default=1, type=int, 
-                        help='The number of threads to use (Default=1) (Max=10)')
+                        help='The number of threads to use (Default=1)')
 
     parser.add_argument('-d', '--dict', dest='dictionary', required=True, 
                         help='Usernames/Passwords dictionary')
