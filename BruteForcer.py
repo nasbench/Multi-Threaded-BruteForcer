@@ -40,10 +40,11 @@ def BruteForce(url, usernameField, passwordField, postBool, getBool, jsonBool, d
     for each_element in resultList:
         if each_element != False:
             finalResults += "The correct username/password combination is : " + each_element[usernameField] + "/" + each_element[passwordField] +"\n"
-    return finalResults
-            
-
-    return "No correct username/password combination was found"
+        
+    if finalResults != "":    
+        return finalResults
+    else:
+        return "No correct username/password combination was found"
 
 # A fucntion that obtains the CSRF Token and the Session correspondent with it
 def obtain_csrf_token_and_session(login_page_url, tag_name):
