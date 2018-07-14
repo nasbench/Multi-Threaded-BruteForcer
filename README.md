@@ -5,7 +5,8 @@ Multi-Threaded-BruteForcer is a script that automates a brute-force attack on a 
 ## Functionalities
 
 * ```Multi threaded requests```
-* ```Dictionary based attack```
+* ```Dictionary based attacks```
+* ```Login's with CSRF tokens```
 
 ## Requirements
 

